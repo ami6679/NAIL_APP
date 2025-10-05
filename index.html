@@ -4,10 +4,37 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>סלון ציפורניים - מערכת תורים</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+        import { getFirestore, collection, addDoc, getDocs, updateDoc, deleteDoc, doc, query, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+
+        // Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyCjM8Bc5XWERDbmgEKnzV4d89hBovpsH24",
+            authDomain: "nail-app-6679.firebaseapp.com",
+            projectId: "nail-app-6679",
+            storageBucket: "nail-app-6679.firebasestorage.app",
+            messagingSenderId: "726553069513",
+            appId: "1:726553069513:web:29803b1047c81136c44a18",
+            measurementId: "G-DYQLNC064P"
+        };
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        
+        // Make db available globally
+        window.db = db;
+        window.firestore = { collection, addDoc, getDocs, updateDoc, deleteDoc, doc, query, onSnapshot };
+    </script>
+
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
+    
     <style>
         * {
             margin: 0;
@@ -25,7 +52,7 @@
     <script type="text/babel">
         const { useState, useEffect } = React;
 
-        // Icons as SVG components
+        // Icons
         const Calendar = ({ size = 24, className = "" }) => (
             <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
@@ -112,6 +139,7 @@
             const [isAdmin, setIsAdmin] = useState(false);
             const [appointments, setAppointments] = useState([]);
             const [blockedSlots, setBlockedSlots] = useState([]);
+            const [loading, setLoading] = useState(true);
             
             const [clientForm, setClientForm] = useState({
                 name: '',
@@ -124,34 +152,39 @@
             const [password, setPassword] = useState('');
             const [loginError, setLoginError] = useState('');
 
+            // Load appointments from Firebase
             useEffect(() => {
-                const mockAppointments = [
-                    {
-                        id: '1',
-                        name: 'שרה כהן',
-                        phone: '050-1234567',
-                        treatment: 'מניקור',
-                        date: '2025-10-06',
-                        time: '09:00',
-                        status: 'pending'
-                    },
-                    {
-                        id: '2',
-                        name: 'רחל לוי',
-                        phone: '052-9876543',
-                        treatment: 'פדיקור',
-                        date: '2025-10-06',
-                        time: '11:00',
-                        status: 'approved'
+                const loadAppointments = async () => {
+                    try {
+                        const appointmentsRef = window.firestore.collection(window.db, 'appointments');
+                        const snapshot = await window.firestore.getDocs(appointmentsRef);
+                        
+                        const loadedAppointments = [];
+                        snapshot.forEach((doc) => {
+                            loadedAppointments.push({ id: doc.id, ...doc.data() });
+                        });
+                        
+                        setAppointments(loadedAppointments);
+                        setLoading(false);
+                    } catch (error) {
+                        console.error('Error loading appointments:', error);
+                        setLoading(false);
                     }
-                ];
-                setAppointments(mockAppointments);
+                };
 
-                const mockBlocked = [
-                    { date: '2025-10-07', time: '14:00' },
-                    { date: '2025-10-08', time: 'all-day' }
-                ];
-                setBlockedSlots(mockBlocked);
+                loadAppointments();
+
+                // Real-time listener
+                const appointmentsRef = window.firestore.collection(window.db, 'appointments');
+                const unsubscribe = window.firestore.onSnapshot(appointmentsRef, (snapshot) => {
+                    const loadedAppointments = [];
+                    snapshot.forEach((doc) => {
+                        loadedAppointments.push({ id: doc.id, ...doc.data() });
+                    });
+                    setAppointments(loadedAppointments);
+                });
+
+                return () => unsubscribe();
             }, []);
 
             const generateTimeSlots = (selectedDate) => {
@@ -203,41 +236,56 @@
                 setView('home');
             };
 
-            const handleClientSubmit = () => {
+            const handleClientSubmit = async () => {
                 if (!clientForm.name || !clientForm.phone || !clientForm.treatment || !clientForm.date || !clientForm.time) {
                     alert('נא למלא את כל השדות');
                     return;
                 }
 
-                const newAppointment = {
-                    id: Date.now().toString(),
-                    ...clientForm,
-                    status: 'pending',
-                    createdAt: new Date().toISOString()
-                };
+                try {
+                    const appointmentsRef = window.firestore.collection(window.db, 'appointments');
+                    await window.firestore.addDoc(appointmentsRef, {
+                        ...clientForm,
+                        status: 'pending',
+                        createdAt: new Date().toISOString()
+                    });
 
-                setAppointments([...appointments, newAppointment]);
-                
-                setClientForm({
-                    name: '',
-                    phone: '',
-                    treatment: '',
-                    date: '',
-                    time: ''
-                });
+                    setClientForm({
+                        name: '',
+                        phone: '',
+                        treatment: '',
+                        date: '',
+                        time: ''
+                    });
 
-                alert('התור נשלח לאישור! בעלת העסק תאשר בקרוב.');
-                setView('home');
+                    alert('התור נשלח לאישור! בעלת העסק תאשר בקרוב.');
+                    setView('home');
+                } catch (error) {
+                    console.error('Error adding appointment:', error);
+                    alert('שגיאה בשליחת התור. נסה שוב.');
+                }
             };
 
-            const approveAppointment = (id) => {
-                setAppointments(appointments.map(apt => 
-                    apt.id === id ? { ...apt, status: 'approved' } : apt
-                ));
+            const approveAppointment = async (id) => {
+                try {
+                    const appointmentRef = window.firestore.doc(window.db, 'appointments', id);
+                    await window.firestore.updateDoc(appointmentRef, {
+                        status: 'approved'
+                    });
+                } catch (error) {
+                    console.error('Error approving appointment:', error);
+                    alert('שגיאה באישור התור');
+                }
             };
 
-            const rejectAppointment = (id) => {
-                setAppointments(appointments.filter(apt => apt.id !== id));
+            const rejectAppointment = async (id) => {
+                try {
+                    const appointmentRef = window.firestore.doc(window.db, 'appointments', id);
+                    await window.firestore.deleteDoc(appointmentRef);
+                } catch (error) {
+                    console.error('Error rejecting appointment:', error);
+                    alert('שגיאה במחיקת התור');
+                }
             };
 
             const getNextDays = (count = 14) => {
@@ -263,6 +311,14 @@
                 
                 return days;
             };
+
+            if (loading) {
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-pink-50 to-purple-50 flex items-center justify-center">
+                        <div className="text-2xl text-gray-600">טוען...</div>
+                    </div>
+                );
+            }
 
             // HOME VIEW
             if (view === 'home') {
