@@ -140,6 +140,7 @@
             const [appointments, setAppointments] = useState([]);
             const [blockedSlots, setBlockedSlots] = useState([]);
             const [loading, setLoading] = useState(true);
+            const [calendarView, setCalendarView] = useState('daily'); // 'daily' or 'weekly'
             
             const [clientForm, setClientForm] = useState({
                 name: '',
@@ -310,6 +311,40 @@
                 }
                 
                 return days;
+            };
+
+            // Generate calendar data
+            const getCalendarData = () => {
+                const today = new Date();
+                const todayStr = today.toISOString().split('T')[0];
+                
+                if (calendarView === 'daily') {
+                    return [{ date: todayStr, dayName: 'היום' }];
+                } else {
+                    // Weekly view - get next 7 working days
+                    const days = [];
+                    let daysAdded = 0;
+                    let currentDate = new Date(today);
+                    
+                    while (daysAdded < 7) {
+                        const dayOfWeek = currentDate.getDay();
+                        if (BUSINESS_HOURS.workDays.includes(dayOfWeek)) {
+                            days.push({
+                                date: currentDate.toISOString().split('T')[0],
+                                dayName: currentDate.toLocaleDateString('he-IL', { weekday: 'short', day: 'numeric', month: 'numeric' })
+                            });
+                            daysAdded++;
+                        }
+                        currentDate.setDate(currentDate.getDate() + 1);
+                    }
+                    return days;
+                }
+            };
+
+            const getAppointmentForSlot = (date, time) => {
+                return appointments.find(
+                    apt => apt.date === date && apt.time === time && apt.status === 'approved'
+                );
             };
 
             if (loading) {
@@ -545,10 +580,11 @@
             if (view === 'admin' && isAdmin) {
                 const pendingAppointments = appointments.filter(apt => apt.status === 'pending');
                 const approvedAppointments = appointments.filter(apt => apt.status === 'approved');
+                const calendarDays = getCalendarData();
 
                 return (
                     <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-50 p-4">
-                        <div className="max-w-6xl mx-auto">
+                        <div className="max-w-7xl mx-auto">
                             <div className="bg-white rounded-2xl shadow-2xl p-6 md:p-8">
                                 <div className="flex justify-between items-center mb-8">
                                     <h2 className="text-3xl font-bold text-gray-800">ניהול תורים</h2>
@@ -561,6 +597,85 @@
                                     </button>
                                 </div>
 
+                                {/* Calendar View Selector */}
+                                <div className="mb-8">
+                                    <div className="flex gap-2 mb-4">
+                                        <button
+                                            onClick={() => setCalendarView('daily')}
+                                            className={`px-6 py-2 rounded-lg font-medium transition duration-200 ${
+                                                calendarView === 'daily'
+                                                    ? 'bg-purple-500 text-white'
+                                                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                            }`}
+                                        >
+                                            יומי
+                                        </button>
+                                        <button
+                                            onClick={() => setCalendarView('weekly')}
+                                            className={`px-6 py-2 rounded-lg font-medium transition duration-200 ${
+                                                calendarView === 'weekly'
+                                                    ? 'bg-purple-500 text-white'
+                                                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                            }`}
+                                        >
+                                            שבועי
+                                        </button>
+                                    </div>
+
+                                    {/* Calendar Grid */}
+                                    <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-4 overflow-x-auto">
+                                        <div className="min-w-max">
+                                            <div className={`grid gap-2 ${calendarView === 'weekly' ? 'grid-cols-8' : 'grid-cols-2'}`}>
+                                                {/* Header */}
+                                                <div className="font-bold text-gray-700 p-3 bg-white rounded-lg">שעה</div>
+                                                {calendarDays.map(day => (
+                                                    <div key={day.date} className="font-bold text-gray-700 p-3 bg-white rounded-lg text-center">
+                                                        {day.dayName}
+                                                    </div>
+                                                ))}
+
+                                                {/* Time Slots */}
+                                                {Array.from({ length: BUSINESS_HOURS.end - BUSINESS_HOURS.start }, (_, i) => {
+                                                    const hour = BUSINESS_HOURS.start + i;
+                                                    const timeStr = `${hour.toString().padStart(2, '0')}:00`;
+
+                                                    return (
+                                                        <React.Fragment key={timeStr}>
+                                                            <div className="font-medium text-gray-600 p-3 bg-white rounded-lg flex items-center justify-center">
+                                                                {timeStr}
+                                                            </div>
+                                                            {calendarDays.map(day => {
+                                                                const appointment = getAppointmentForSlot(day.date, timeStr);
+                                                                
+                                                                return (
+                                                                    <div
+                                                                        key={`${day.date}-${timeStr}`}
+                                                                        className={`p-3 rounded-lg transition duration-200 ${
+                                                                            appointment
+                                                                                ? 'bg-green-100 border-2 border-green-300'
+                                                                                : 'bg-white border-2 border-gray-200'
+                                                                        }`}
+                                                                    >
+                                                                        {appointment ? (
+                                                                            <div className="text-sm">
+                                                                                <div className="font-bold text-green-800">{appointment.name}</div>
+                                                                                <div className="text-green-600 text-xs">{appointment.treatment}</div>
+                                                                            </div>
+                                                                        ) : (
+                                                                            <div className="text-gray-400 text-sm text-center">פנוי</div>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </React.Fragment>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Pending Appointments */}
                                 <div className="mb-8">
                                     <h3 className="text-2xl font-bold text-gray-800 mb-4 flex items-center gap-2">
                                         <Clock size={24} className="text-orange-500" />
@@ -578,11 +693,11 @@
                                                     <div className="flex-1">
                                                         <div className="font-bold text-lg text-gray-800">{apt.name}</div>
                                                         <div className="text-gray-600 flex items-center gap-4 mt-1 flex-wrap">
-                                                            <span>📱 {apt.phone}</span>
-                                                            <span>💅 {apt.treatment}</span>
+                                                            <span>{apt.phone}</span>
+                                                            <span>{apt.treatment}</span>
                                                         </div>
                                                         <div className="text-gray-700 font-medium mt-2">
-                                                            📅 {new Date(apt.date).toLocaleDateString('he-IL')} | ⏰ {apt.time}
+                                                            {new Date(apt.date).toLocaleDateString('he-IL')} | {apt.time}
                                                         </div>
                                                     </div>
                                                     <div className="flex gap-2">
@@ -607,6 +722,7 @@
                                     )}
                                 </div>
 
+                                {/* Approved Appointments */}
                                 <div>
                                     <h3 className="text-2xl font-bold text-gray-800 mb-4 flex items-center gap-2">
                                         <CheckCircle size={24} className="text-green-500" />
@@ -623,11 +739,11 @@
                                                 <div key={apt.id} className="bg-green-50 border-2 border-green-200 rounded-xl p-4">
                                                     <div className="font-bold text-lg text-gray-800">{apt.name}</div>
                                                     <div className="text-gray-600 flex items-center gap-4 mt-1 flex-wrap">
-                                                        <span>📱 {apt.phone}</span>
-                                                        <span>💅 {apt.treatment}</span>
+                                                        <span>{apt.phone}</span>
+                                                        <span>{apt.treatment}</span>
                                                     </div>
                                                     <div className="text-gray-700 font-medium mt-2">
-                                                        📅 {new Date(apt.date).toLocaleDateString('he-IL')} | ⏰ {apt.time}
+                                                        {new Date(apt.date).toLocaleDateString('he-IL')} | {apt.time}
                                                     </div>
                                                 </div>
                                             ))}
