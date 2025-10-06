@@ -75,13 +75,17 @@
         const ONESIGNAL_APP_ID = '2e7265db-0b97-449c-b943-b15a9cfdcbeb';
 
         // Initialize OneSignal
-        window.OneSignalDeferred = window.OneSignalDeferred || [];
-        OneSignalDeferred.push(async function(OneSignal) {
-            await OneSignal.init({
-                appId: ONESIGNAL_APP_ID,
-                allowLocalhostAsSecureOrigin: true,
-            });
-        });
+       window.OneSignalDeferred = window.OneSignalDeferred || [];
+OneSignalDeferred.push(async function(OneSignal) {
+  await OneSignal.init({
+    appId: "2e7265db-0b97-449c-b943-b15a9cfdcbeb",
+    allowLocalhostAsSecureOrigin: true,
+    serviceWorkerParam: {
+      scope: '/',
+      workerUrl: 'OneSignalSDKWorker-local.js'
+    }
+  });
+});
 
         // Icons (same as before)
         const Calendar = ({ size = 24, className = "" }) => (
@@ -929,3 +933,4 @@
     </script>
 </body>
 </html>
+
