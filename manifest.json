@@ -1,0 +1,42 @@
+{
+  "name": "סלון ציפורניים - מערכת תורים",
+  "short_name": "תורים",
+  "description": "מערכת תורים מקוונת לסלון ציפורניים",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fdf2f8",
+  "theme_color": "#ec4899",
+  "orientation": "portrait",
+  "dir": "rtl",
+  "lang": "he",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [],
+  "categories": ["business", "lifestyle"],
+  "shortcuts": [
+    {
+      "name": "קביעת תור",
+      "short_name": "תור חדש",
+      "description": "קביעת תור חדש",
+      "url": "/?action=book",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ]
+}
