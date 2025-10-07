@@ -1,1 +1,0 @@
-importScripts('/OneSignalSDKWorker-local.js');
