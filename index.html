@@ -15,11 +15,12 @@
     <!-- 
     ========================================
     מערכת תורים - סלון ציפורניים
-    Version: 2.0.1
+    Version: 2.0.2
     Last Update: 2025-10-07
     ========================================
     
     Change Log:
+    - v2.0.2 (2025-10-07): תיקון שמירת FCM Tokens + לוגים משופרים + כפתור רענון
     - v2.0.1 (2025-10-07): תיקון רישום Service Worker מפורש
     - v2.0.0 (2025-10-07): הוספת Push Notifications עם FCM
     - v1.1.0 (2025-10-05): הוספת יומן יומי/שבועי באזור ניהול
@@ -227,37 +228,51 @@
             // Request notification permission and save FCM token
             const requestNotificationPermission = async () => {
                 try {
-                    console.log('Requesting notification permission...');
+                    console.log('🔔 Requesting notification permission...');
                     
                     const permission = await Notification.requestPermission();
                     setNotificationStatus(permission);
                     
                     if (permission === 'granted') {
-                        console.log('Permission granted, getting FCM token...');
+                        console.log('✓ Permission granted, getting FCM token...');
                         
                         // Get FCM token
                         const token = await window.fcm.getToken(window.messaging, {
                             vapidKey: 'BJ1ym01pIa2mPfaSyKAQ8dj4qmOIedSTnBDf8kxjpXh3VEciNV46weWObXg128xpoLnOwbhbsGxWH3NQ9WRqNGg'
                         });
                         
-                        console.log('FCM Token:', token);
+                        console.log('✓ FCM Token received:', token.substring(0, 20) + '...');
                         
                         // Save token to Firestore
+                        console.log('💾 Saving token to Firestore...');
                         const tokensRef = window.firestore.collection(window.db, 'fcmTokens');
-                        await window.firestore.addDoc(tokensRef, {
-                            token: token,
-                            isOwner: true,
-                            createdAt: new Date().toISOString(),
-                            deviceInfo: navigator.userAgent
-                        });
                         
-                        alert('התראות הופעלו בהצלחה! ✓');
+                        // Check if token already exists
+                        const existingTokens = await window.firestore.getDocs(
+                            window.firestore.query(tokensRef, window.firestore.where('token', '==', token))
+                        );
+                        
+                        if (existingTokens.empty) {
+                            await window.firestore.addDoc(tokensRef, {
+                                token: token,
+                                isOwner: true,
+                                createdAt: new Date().toISOString(),
+                                deviceInfo: navigator.userAgent
+                            });
+                            console.log('✓ Token saved to Firestore successfully!');
+                            alert('✓ התראות הופעלו בהצלחה!');
+                        } else {
+                            console.log('ℹ Token already exists in Firestore');
+                            alert('✓ התראות כבר פעילות!');
+                        }
+                        
                     } else {
-                        alert('התראות נחסמו. אפשר אותן בהגדרות הדפדפן.');
+                        console.log('✗ Permission denied');
+                        alert('❌ התראות נחסמו. אפשר אותן בהגדרות הדפדפן.');
                     }
                 } catch (error) {
-                    console.error('Error getting notification permission:', error);
-                    alert('שגיאה בהפעלת התראות: ' + error.message);
+                    console.error('✗ Error getting notification permission:', error);
+                    alert('❌ שגיאה בהפעלת התראות: ' + error.message);
                 }
             };
 
@@ -705,10 +720,13 @@
                                     <h2 className="text-3xl font-bold text-gray-800">ניהול תורים</h2>
                                     <div className="flex gap-2">
                                         {notificationStatus === 'granted' && (
-                                            <div className="bg-green-100 text-green-700 px-4 py-2 rounded-xl flex items-center gap-2">
+                                            <button
+                                                onClick={requestNotificationPermission}
+                                                className="bg-green-100 hover:bg-green-200 text-green-700 px-4 py-2 rounded-xl flex items-center gap-2 transition duration-200 cursor-pointer"
+                                            >
                                                 <Bell size={18} />
-                                                <span className="text-sm">התראות פעילות</span>
-                                            </div>
+                                                <span className="text-sm">התראות פעילות (לחץ לרענון)</span>
+                                            </button>
                                         )}
                                         {notificationStatus === 'default' && (
                                             <button
