@@ -15,11 +15,12 @@
     <!-- 
     ========================================
     מערכת תורים - סלון ציפורניים
-    Version: 2.2.1
+    Version: 2.3.0
     Last Update: 2025-10-07
     ========================================
     
     Change Log:
+    - v2.3.0 (2025-10-07): הוספת הודעת מערכת + חסימת שעות ביומן
     - v2.2.1 (2025-10-07): הצגת תורים מאושרים - רק עתידיים (מהיום והלאה)
     - v2.2.0 (2025-10-07): שינוי מהותי - שמירת FCM Token בתור עצמו (לא תלוי בטלפון!)
     - v2.1.0 (2025-10-07): הוספת התראות ללקוחות כשתור מאושר
@@ -309,37 +310,84 @@
 
             // Load appointments from Firebase
             useEffect(() => {
-                const loadAppointments = async () => {
+                const loadData = async () => {
                     try {
+                        // Load appointments
                         const appointmentsRef = window.firestore.collection(window.db, 'appointments');
-                        const snapshot = await window.firestore.getDocs(appointmentsRef);
+                        const appointmentsSnapshot = await window.firestore.getDocs(appointmentsRef);
                         
                         const loadedAppointments = [];
-                        snapshot.forEach((doc) => {
+                        appointmentsSnapshot.forEach((doc) => {
                             loadedAppointments.push({ id: doc.id, ...doc.data() });
                         });
                         
                         setAppointments(loadedAppointments);
+                        
+                        // Load blocked slots
+                        const blockedSlotsRef = window.firestore.collection(window.db, 'blockedSlots');
+                        const blockedSlotsSnapshot = await window.firestore.getDocs(blockedSlotsRef);
+                        
+                        const loadedBlockedSlots = [];
+                        blockedSlotsSnapshot.forEach((doc) => {
+                            loadedBlockedSlots.push({ id: doc.id, ...doc.data() });
+                        });
+                        
+                        setBlockedSlots(loadedBlockedSlots);
+                        
+                        // Load system message
+                        const messageRef = window.firestore.collection(window.db, 'systemMessage');
+                        const messageSnapshot = await window.firestore.getDocs(messageRef);
+                        
+                        if (!messageSnapshot.empty) {
+                            const messageDoc = messageSnapshot.docs[0];
+                            setSystemMessage(messageDoc.data().message || '');
+                        }
+                        
                         setLoading(false);
                     } catch (error) {
-                        console.error('Error loading appointments:', error);
+                        console.error('Error loading data:', error);
                         setLoading(false);
                     }
                 };
 
-                loadAppointments();
+                loadData();
 
-                // Real-time listener
+                // Real-time listener for appointments
                 const appointmentsRef = window.firestore.collection(window.db, 'appointments');
-                const unsubscribe = window.firestore.onSnapshot(appointmentsRef, (snapshot) => {
+                const unsubscribeAppointments = window.firestore.onSnapshot(appointmentsRef, (snapshot) => {
                     const loadedAppointments = [];
                     snapshot.forEach((doc) => {
                         loadedAppointments.push({ id: doc.id, ...doc.data() });
                     });
                     setAppointments(loadedAppointments);
                 });
+                
+                // Real-time listener for blocked slots
+                const blockedSlotsRef = window.firestore.collection(window.db, 'blockedSlots');
+                const unsubscribeBlockedSlots = window.firestore.onSnapshot(blockedSlotsRef, (snapshot) => {
+                    const loadedBlockedSlots = [];
+                    snapshot.forEach((doc) => {
+                        loadedBlockedSlots.push({ id: doc.id, ...doc.data() });
+                    });
+                    setBlockedSlots(loadedBlockedSlots);
+                });
+                
+                // Real-time listener for system message
+                const messageRef = window.firestore.collection(window.db, 'systemMessage');
+                const unsubscribeMessage = window.firestore.onSnapshot(messageRef, (snapshot) => {
+                    if (!snapshot.empty) {
+                        const messageDoc = snapshot.docs[0];
+                        setSystemMessage(messageDoc.data().message || '');
+                    } else {
+                        setSystemMessage('');
+                    }
+                });
 
-                return () => unsubscribe();
+                return () => {
+                    unsubscribeAppointments();
+                    unsubscribeBlockedSlots();
+                    unsubscribeMessage();
+                };
             }, []);
 
             const generateTimeSlots = (selectedDate) => {
@@ -461,6 +509,81 @@
                     alert('שגיאה במחיקת התור');
                 }
             };
+            
+            // System message functions
+            const saveSystemMessage = async () => {
+                try {
+                    const messageRef = window.firestore.collection(window.db, 'systemMessage');
+                    const snapshot = await window.firestore.getDocs(messageRef);
+                    
+                    if (snapshot.empty) {
+                        // Create new message
+                        await window.firestore.addDoc(messageRef, {
+                            message: messageInput,
+                            updatedAt: new Date().toISOString()
+                        });
+                    } else {
+                        // Update existing message
+                        const docId = snapshot.docs[0].id;
+                        const docRef = window.firestore.doc(window.db, 'systemMessage', docId);
+                        await window.firestore.updateDoc(docRef, {
+                            message: messageInput,
+                            updatedAt: new Date().toISOString()
+                        });
+                    }
+                    
+                    setEditingMessage(false);
+                    alert('ההודעה נשמרה בהצלחה!');
+                } catch (error) {
+                    console.error('Error saving message:', error);
+                    alert('שגיאה בשמירת ההודעה');
+                }
+            };
+            
+            const deleteSystemMessage = async () => {
+                try {
+                    const messageRef = window.firestore.collection(window.db, 'systemMessage');
+                    const snapshot = await window.firestore.getDocs(messageRef);
+                    
+                    if (!snapshot.empty) {
+                        const docId = snapshot.docs[0].id;
+                        const docRef = window.firestore.doc(window.db, 'systemMessage', docId);
+                        await window.firestore.deleteDoc(docRef);
+                        setMessageInput('');
+                        alert('ההודעה נמחקה!');
+                    }
+                } catch (error) {
+                    console.error('Error deleting message:', error);
+                    alert('שגיאה במחיקת ההודעה');
+                }
+            };
+            
+            // Blocked slots functions
+            const toggleBlockSlot = async (date, time) => {
+                try {
+                    // Check if slot is already blocked
+                    const existingBlock = blockedSlots.find(
+                        slot => slot.date === date && slot.time === time
+                    );
+                    
+                    if (existingBlock) {
+                        // Unblock - delete the document
+                        const docRef = window.firestore.doc(window.db, 'blockedSlots', existingBlock.id);
+                        await window.firestore.deleteDoc(docRef);
+                    } else {
+                        // Block - create new document
+                        const blockedSlotsRef = window.firestore.collection(window.db, 'blockedSlots');
+                        await window.firestore.addDoc(blockedSlotsRef, {
+                            date: date,
+                            time: time,
+                            createdAt: new Date().toISOString()
+                        });
+                    }
+                } catch (error) {
+                    console.error('Error toggling blocked slot:', error);
+                    alert('שגיאה בחסימת/ביטול חסימה');
+                }
+            };
 
             const getNextDays = (count = 14) => {
                 const days = [];
@@ -531,6 +654,15 @@
                 return (
                     <div className="min-h-screen bg-gradient-to-br from-pink-50 to-purple-50 flex items-center justify-center p-4">
                         <div className="max-w-md w-full bg-white rounded-2xl shadow-2xl p-8">
+                            {systemMessage && (
+                                <div className="mb-6 bg-yellow-50 border-2 border-yellow-400 rounded-xl p-4">
+                                    <div className="flex items-start gap-2">
+                                        <span className="text-2xl">⚠️</span>
+                                        <p className="text-gray-800 whitespace-pre-wrap">{systemMessage}</p>
+                                    </div>
+                                </div>
+                            )}
+                            
                             <div className="text-center mb-8">
                                 <div className="w-20 h-20 bg-pink-500 rounded-full flex items-center justify-center mx-auto mb-4">
                                     <span className="text-4xl">💅</span>
@@ -750,8 +882,297 @@
             // ADMIN VIEW
             if (view === 'admin' && isAdmin) {
                 const pendingAppointments = appointments.filter(apt => apt.status === 'pending');
-                const approvedAppointments = appointments.filter(apt => apt.status === 'approved');
+                
+                // Get today's date string (YYYY-MM-DD format)
+                const today = new Date().toISOString().split('T')[0];
+                
+                // Show only future approved appointments (today and onwards)
+                const approvedAppointments = appointments.filter(apt => 
+                    apt.status === 'approved' && apt.date >= today
+                );
+                
                 const calendarDays = getCalendarData();
+
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-50 p-4">
+                        <div className="max-w-7xl mx-auto">
+                            <div className="bg-white rounded-2xl shadow-2xl p-6 md:p-8">
+                                <div className="flex justify-between items-center mb-8">
+                                    <h2 className="text-3xl font-bold text-gray-800">ניהול תורים</h2>
+                                    <div className="flex gap-2">
+                                        {notificationStatus === 'granted' && (
+                                            <button
+                                                onClick={requestNotificationPermission}
+                                                className="bg-green-100 hover:bg-green-200 text-green-700 px-4 py-2 rounded-xl flex items-center gap-2 transition duration-200 cursor-pointer"
+                                            >
+                                                <Bell size={18} />
+                                                <span className="text-sm">התראות פעילות (לחץ לרענון)</span>
+                                            </button>
+                                        )}
+                                        {notificationStatus === 'default' && (
+                                            <button
+                                                onClick={requestNotificationPermission}
+                                                className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-xl flex items-center gap-2 transition duration-200"
+                                            >
+                                                <Bell size={18} />
+                                                <span className="text-sm">אפשר התראות</span>
+                                            </button>
+                                        )}
+                                        <button
+                                            onClick={handleAdminLogout}
+                                            className="flex items-center gap-2 bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-xl transition duration-200"
+                                        >
+                                            <LogOut size={18} />
+                                            התנתקות
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* System Message Section */}
+                                <div className="mb-8 bg-gradient-to-br from-yellow-50 to-orange-50 rounded-xl p-6 border-2 border-yellow-300">
+                                    <h3 className="text-xl font-bold text-gray-800 mb-4">📢 הודעת מערכת למסך הבית</h3>
+                                    
+                                    {!editingMessage ? (
+                                        <div>
+                                            {systemMessage ? (
+                                                <div className="bg-white rounded-lg p-4 mb-4 border-2 border-yellow-200">
+                                                    <p className="text-gray-800 whitespace-pre-wrap">{systemMessage}</p>
+                                                </div>
+                                            ) : (
+                                                <p className="text-gray-600 mb-4">אין הודעה פעילה כרגע</p>
+                                            )}
+                                            
+                                            <div className="flex gap-2">
+                                                <button
+                                                    onClick={() => {
+                                                        setEditingMessage(true);
+                                                        setMessageInput(systemMessage);
+                                                    }}
+                                                    className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded-lg transition duration-200"
+                                                >
+                                                    {systemMessage ? '✏️ ערוך הודעה' : '➕ הוסף הודעה'}
+                                                </button>
+                                                
+                                                {systemMessage && (
+                                                    <button
+                                                        onClick={() => {
+                                                            if (confirm('בטוח שרוצה למחוק את ההודעה?')) {
+                                                                deleteSystemMessage();
+                                                            }
+                                                        }}
+                                                        className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition duration-200"
+                                                    >
+                                                        🗑️ מחק הודעה
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div>
+                                            <textarea
+                                                value={messageInput}
+                                                onChange={(e) => setMessageInput(e.target.value)}
+                                                className="w-full px-4 py-3 border-2 border-yellow-300 rounded-lg focus:border-yellow-500 focus:outline-none mb-4"
+                                                rows="3"
+                                                placeholder="לדוגמה: בתאריך 09.10 לא עובדת בין 14:00-16:00"
+                                            />
+                                            
+                                            <div className="flex gap-2">
+                                                <button
+                                                    onClick={saveSystemMessage}
+                                                    className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg transition duration-200"
+                                                >
+                                                    💾 שמור
+                                                </button>
+                                                <button
+                                                    onClick={() => {
+                                                        setEditingMessage(false);
+                                                        setMessageInput('');
+                                                    }}
+                                                    className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition duration-200"
+                                                >
+                                                    ✖ ביטול
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Calendar View Selector */}
+                                <div className="mb-8">
+                                    <div className="flex gap-2 mb-4 items-center">
+                                        <button
+                                            onClick={() => setCalendarView('daily')}
+                                            className={`px-6 py-2 rounded-lg font-medium transition duration-200 ${
+                                                calendarView === 'daily'
+                                                    ? 'bg-purple-500 text-white'
+                                                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                            }`}
+                                        >
+                                            יומי
+                                        </button>
+                                        <button
+                                            onClick={() => setCalendarView('weekly')}
+                                            className={`px-6 py-2 rounded-lg font-medium transition duration-200 ${
+                                                calendarView === 'weekly'
+                                                    ? 'bg-purple-500 text-white'
+                                                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                            }`}
+                                        >
+                                            שבועי
+                                        </button>
+                                        
+                                        <div className="mr-auto text-sm text-gray-600 bg-blue-50 px-4 py-2 rounded-lg border border-blue-200">
+                                            💡 טיפ: לחץ על שעה ביומן לחסימה/ביטול חסימה
+                                        </div>
+                                    </div>
+
+                                    {/* Calendar Grid */}
+                                    <div className="bg-gradient-to-br from-purple-50 to-pink-50 rounded-xl p-4 overflow-x-auto">
+                                        <div className="min-w-max">
+                                            <div className={`grid gap-2 ${calendarView === 'weekly' ? 'grid-cols-8' : 'grid-cols-2'}`}>
+                                                <div className="font-bold text-gray-700 p-3 bg-white rounded-lg">שעה</div>
+                                                {calendarDays.map(day => (
+                                                    <div key={day.date} className="font-bold text-gray-700 p-3 bg-white rounded-lg text-center">
+                                                        {day.dayName}
+                                                    </div>
+                                                ))}
+
+                                                {Array.from({ length: BUSINESS_HOURS.end - BUSINESS_HOURS.start }, (_, i) => {
+                                                    const hour = BUSINESS_HOURS.start + i;
+                                                    const timeStr = `${hour.toString().padStart(2, '0')}:00`;
+
+                                                    return (
+                                                        <React.Fragment key={timeStr}>
+                                                            <div className="font-medium text-gray-600 p-3 bg-white rounded-lg flex items-center justify-center">
+                                                                {timeStr}
+                                                            </div>
+                                                            {calendarDays.map(day => {
+                                                                const appointment = getAppointmentForSlot(day.date, timeStr);
+                                                                const isBlocked = blockedSlots.some(
+                                                                    slot => slot.date === day.date && slot.time === timeStr
+                                                                );
+                                                                
+                                                                return (
+                                                                    <div
+                                                                        key={`${day.date}-${timeStr}`}
+                                                                        onClick={() => {
+                                                                            if (!appointment) {
+                                                                                toggleBlockSlot(day.date, timeStr);
+                                                                            }
+                                                                        }}
+                                                                        className={`p-3 rounded-lg transition duration-200 ${
+                                                                            appointment
+                                                                                ? 'bg-green-100 border-2 border-green-300'
+                                                                                : isBlocked
+                                                                                ? 'bg-red-100 border-2 border-red-300 cursor-pointer hover:bg-red-200'
+                                                                                : 'bg-white border-2 border-gray-200 cursor-pointer hover:bg-gray-100'
+                                                                        }`}
+                                                                    >
+                                                                        {appointment ? (
+                                                                            <div className="text-sm">
+                                                                                <div className="font-bold text-green-800">{appointment.name}</div>
+                                                                                <div className="text-green-600 text-xs">{appointment.treatment}</div>
+                                                                            </div>
+                                                                        ) : isBlocked ? (
+                                                                            <div className="text-center">
+                                                                                <div className="text-2xl">🔒</div>
+                                                                                <div className="text-xs text-red-600">חסום</div>
+                                                                            </div>
+                                                                        ) : (
+                                                                            <div className="text-gray-400 text-sm text-center">פנוי</div>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </React.Fragment>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Pending Appointments */}
+                                <div className="mb-8">
+                                    <h3 className="text-2xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+                                        <Clock size={24} className="text-orange-500" />
+                                        תורים ממתינים לאישור ({pendingAppointments.length})
+                                    </h3>
+                                    
+                                    {pendingAppointments.length === 0 ? (
+                                        <div className="bg-gray-100 rounded-xl p-6 text-center text-gray-600">
+                                            אין תורים ממתינים
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-4">
+                                            {pendingAppointments.map(apt => (
+                                                <div key={apt.id} className="bg-orange-50 border-2 border-orange-200 rounded-xl p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                                                    <div className="flex-1">
+                                                        <div className="font-bold text-lg text-gray-800">{apt.name}</div>
+                                                        <div className="text-gray-600 flex items-center gap-4 mt-1 flex-wrap">
+                                                            <span>{apt.phone}</span>
+                                                            <span>{apt.treatment}</span>
+                                                        </div>
+                                                        <div className="text-gray-700 font-medium mt-2">
+                                                            {new Date(apt.date).toLocaleDateString('he-IL')} | {apt.time}
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex gap-2">
+                                                        <button
+                                                            onClick={() => approveAppointment(apt.id)}
+                                                            className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-xl flex items-center gap-2 transition duration-200"
+                                                        >
+                                                            <CheckCircle size={18} />
+                                                            אישור
+                                                        </button>
+                                                        <button
+                                                            onClick={() => rejectAppointment(apt.id)}
+                                                            className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-xl flex items-center gap-2 transition duration-200"
+                                                        >
+                                                            <XCircle size={18} />
+                                                            דחייה
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Approved Appointments */}
+                                <div>
+                                    <h3 className="text-2xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+                                        <CheckCircle size={24} className="text-green-500" />
+                                        תורים מאושרים ({approvedAppointments.length})
+                                    </h3>
+                                    
+                                    {approvedAppointments.length === 0 ? (
+                                        <div className="bg-gray-100 rounded-xl p-6 text-center text-gray-600">
+                                            אין תורים מאושרים
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-4">
+                                            {approvedAppointments.map(apt => (
+                                                <div key={apt.id} className="bg-green-50 border-2 border-green-200 rounded-xl p-4">
+                                                    <div className="font-bold text-lg text-gray-800">{apt.name}</div>
+                                                    <div className="text-gray-600 flex items-center gap-4 mt-1 flex-wrap">
+                                                        <span>{apt.phone}</span>
+                                                        <span>{apt.treatment}</span>
+                                                    </div>
+                                                    <div className="text-gray-700 font-medium mt-2">
+                                                        {new Date(apt.date).toLocaleDateString('he-IL')} | {apt.time}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
 
                 return (
                     <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-50 p-4">
